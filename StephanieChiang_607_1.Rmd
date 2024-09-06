@@ -1,0 +1,65 @@
+---
+title: "StephanieChiang_607_1"
+output: html_document
+date: "2024-09-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Bechdel Test
+
+(Maybe) Fun Fact: I chose this data set from FiveThirtyEight because I majored in Media and Film Studies as an undergraduate before becoming a software engineer. This sort of information is really valuable in the study of culture and communications.
+
+
+### Overview
+
+[The Dollar-And-Cents Case Against Hollywood’s Exclusion of Women](https://fivethirtyeight.com/features/the-dollar-and-cents-case-against-hollywoods-exclusion-of-women/)
+
+[Original Data and Code on Github](https://github.com/fivethirtyeight/data/tree/master/bechdel)
+
+The article dives into the origins and limitations of the (very imperfect) Bechdel Test. Though it endures in pop culture as a generic measure of whether a movie can be considered "feminist" at a most basic level, it is much more useful in viewing overall trends and profitability in media content.
+
+
+##### Loading the Data
+
+```{r loading-all-data}
+all_movies <- read.csv(file = "movies.csv")
+```
+
+
+##### Subsetting
+
+To limit the number of rows, I selected only movies for the last 5 years of the data.
+
+The following columns were selected:
+
+1. year
+3. title
+6. binary: the determination of whether the film passed the test; based on test and clean_test, which allowed for nuances but also indicated which of the 3 reasons the test may have failed
+11. budget_2013.: the cost to make the film, adjusted for inflation to 2013 USD
+12. domgross_2013.: the domestic box-office gross, adjusted for inflation to 2013 USD
+13. intgross_2013.: the international box-office gross, adjusted for inflation to 2013 USD
+
+```{r subset-data}
+sub_movies <- all_movies[all_movies$year > 2008, c(1, 3, 6, 11:13)]
+```
+
+``` {r rename-columns}
+colnames(sub_movies)[3] <- 'Bechdel'
+colnames(sub_movies)[4] <- 'budget'
+colnames(sub_movies)[5] <- 'domestic'
+colnames(sub_movies)[6] <- 'international'
+```
+
+A preview of the new table:
+
+```{r}
+library(knitr)
+kable(sub_movies[1:10,],)
+```
+
+### In Conclusion
+
+Going forward, it would be valuable and interesting to have data from after 2013. Over 10 years after the Bechdel Test first entered our cultural lexicon, there have been seismic culture changes in Hollywood and the US media at large. Also, the international film scene has grown to be extremely influential and profitable; it might be interesting to include international releases. (With acknowledgment that it can be very difficult to attribute a film to specific country - would it be based on language? Filmmaker nationality? Source of funds? Etc.)
