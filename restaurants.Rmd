@@ -1,0 +1,101 @@
+---
+title: "Project 2: NYC Restaurants"
+author: "Stephanie Chiang"
+output: html_document
+date: "2024-10-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+```
+
+## Project 2: NYC Restaurants
+
+Using this dataset provided by the Health Department of NYC [here]("https://catalog.data.gov/dataset/dohmh-new-york-city-restaurant-inspection-results"), my aim is to analyze the restaurants in New York City with the highest number of violations, and examine how different restaurant types and boroughs may affect these numbers. 
+
+### Import data, select columns and filter rows
+
+The raw file is available for download at the link above.
+
+```{r import}
+rest_raw <- read.csv(file = "restaurants.csv")
+```
+
+The columns selected for containing the most relevant information here are: the CAMIS (restaurant ID), the DBA (name), borough, cuisine (type of restaurant), and the violation code.
+
+Next, because there are a fair number of rows without any violations listed at all, I removed any with empty strings in the column for violation code (this dataset does not appear to contain `NA`s).
+
+NOTE: Having no listed violation code could apparently mean any number of things in the raw data. Some are expressly defined with "No violations were recorded at the time of this inspection." Others are only noted (without any detail) as "Establishment re-opened by DOHMH." But most have nothing in the `ACTION` or `DESCRIPTION` columns at all.
+
+```{r select-filter}
+rest_raw <- rest_raw |>
+  select(CAMIS, DBA, BORO, CUISINE.DESCRIPTION, VIOLATION.CODE) |>
+  filter(VIOLATION.CODE != "")
+```
+
+### Create a new table
+
+To create a clean table for the count of violations, I first grouped by restaurant ID (CAMIS) to collapse each restaurant into 1 row. A column was added for the total number of violations; the VIOLATION.CODE column had to be removed here to ensure that each restaurant represented only one observation or row.
+
+```{r new-table, message=FALSE, warning=FALSE}
+rest_violations <- rest_raw |>
+  group_by(CAMIS, DBA, BORO, CUISINE.DESCRIPTION) |>
+  summarize(VIOLATIONS = n())
+```
+
+### Analysis
+
+The data frame now includes all the restaurants in NYC with at least 1 violation listed by code.
+
+Here is a simple analysis by borough: 
+
+* for each borough, the total number of restaurants and the proportion of the city total
+* then the total number of violations and the proportion of the city total
+* and just for curiosity's sake, the approx. number of violations per restaurant
+
+As expected, the share of violations for each borough generally aligns with its share of restaurants.
+
+```{r boro-analysis}
+# totals for the city
+sum_rest <- nrow(rest_violations)
+sum_viol <- sum(rest_violations$VIOLATIONS)
+
+boro_total <- rest_violations |>
+  group_by(BORO) |>
+  summarize(num_rest = n(),
+            pct_rest = round((num_rest / sum_rest) * 100, digits = 2),
+            total_viol = sum(VIOLATIONS),
+            pct_viol = round((total_viol / sum_viol) * 100, digits = 2),
+            viol_per_rest = round(total_viol / num_rest))
+
+knitr::kable(boro_total)
+```
+
+Here is a similar analysis by cuisine type:
+
+* for each cuisine type, the total number of restaurants and the proportion of the city total
+* then the total number of violations and the proportion of the city total
+* select only the top 10 by percent of violations for view here
+
+In this case, though the percentage differences may not be significant, they can be seen as consistent: Chinese, Latin American, Mexican and Caribbean (cuisines with a perception of being more "ethnic") received a higher share of violations than American, Italian, cafes and Japanese. These cuisines may be perceived as less "ethnic", more expensive, etc.
+
+```{r cuisine-analysis}
+cuisine_total <- rest_violations |>
+  group_by(CUISINE.DESCRIPTION) |>
+  summarize(num_rest = n(),
+            pct_rest = round((num_rest / sum_rest) * 100, digits = 2),
+            total_viol = sum(VIOLATIONS),
+            pct_viol = round((total_viol / sum_viol) * 100, digits = 2),
+            viol_per_rest = round(total_viol / num_rest)) |>
+  slice_max(pct_viol, n = 10)
+
+knitr::kable(cuisine_total)
+```
+
+
+### Conclusion
+
+However, does any of this really mean that these cuisine types or boroughs are more likely to be non-compliant with health and safety? Or could there be a perception by the individual inspectors, the city health department, or even the dining public that certain types of restaurants deserve more or harsher inspections? Information for the city's inspectors is not provided, which could have provided another dimension for analysis.
