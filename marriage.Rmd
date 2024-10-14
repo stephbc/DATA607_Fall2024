@@ -98,9 +98,11 @@ I had originally intended to include some designations that were combinations wi
 
 ### Analysis
 
+The final, tidy version of the data above would allow for marriage rates to be grouped and filtered by year, education and/or gender for analysis.
+
 Since the marriage rates were all averages already, I thought a few visual representations of the changes in marriage rates could be useful.
 
-Here, a simple view of all men and women, by year: 
+This visualization selected the marriage rates for rows in which the education column included "all" levels, then compared those by gender and arranged by year on the x-axis: 
 
 ```{r year}
 all_rate <- filter(marriages, education == "all")
@@ -109,7 +111,9 @@ ggplot(all_rate, aes(fill = gender, x = year, y = marriage_rate)) +
     geom_bar(position="dodge", stat="identity")
 ```
 
-And here, a look at marriage rates by gender and education over time. Of note were the rates of women with Bachelor's degrees and men with only high school education.
+This next visualization also plotted marriage rates against the year in order to examine the changes to the rate over time. In this case, using ggplot2's scatterplot grouped the observations by the gender column (represented by dot color) and the education column (represented by dot shape).
+
+Of note below: the rates of women with Bachelor's degrees and men with only high school education.
 
 ```{r education, message=FALSE, warning=FALSE}
 ggplot(marriages, aes(year, marriage_rate)) +
@@ -117,4 +121,6 @@ ggplot(marriages, aes(year, marriage_rate)) +
 ```
 ### Conclusion
 
-In this case, I decided to merge and tidy 2 sets of data into 1 for direct comparison; an alternative approach would have been to keep each dataset separate, and either group and summarize before analyzing both values or create separate plots for each.
+In this case, I decided to merge and tidy 2 sets of data into 1 for direct comparison; an alternative approach could have been to keep each dataset separate, and either group and summarize before analyzing each or create separate plots. 
+
+Changing the original sets into this tidy form, though, allowed for grouping and selecting by column values and analyzing the rates between men and women directly. Tidy data also fed easily into ggplot2 for visualization using code that was simple to produce and read. 
