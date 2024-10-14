@@ -48,9 +48,9 @@ rest_violations <- rest_raw |>
 
 ### Analysis
 
-The data frame now includes all the restaurants in NYC with at least 1 violation listed by code.
+The data frame now includes all the restaurants in NYC with at least 1 violation listed by code, with columns for the cuisine type and borough. This allows for the data to be grouped by these variables for summary statistics.
 
-Here is a simple analysis by borough: 
+For example, a simple analysis by borough:
 
 * for each borough, the total number of restaurants and the proportion of the city total
 * then the total number of violations and the proportion of the city total
