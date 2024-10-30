@@ -1,0 +1,66 @@
+---
+title: 'Week 9 Assignment: Web APIs'
+author: 'Stephanie Chiang'
+output: html_document
+date: "2024-10-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The New York Times Books API
+
+```{r packages}
+library(tidyr)
+library(dplyr)
+library(httr2)
+library(jsonlite)
+```
+
+### Making the GET request to the API
+
+First, I signed up for a developer account and key for the New York Times API. Working with Books data, I set up a request using the `httr` package to fetch the latest list of the most popular fiction e-books. My API key is set as a variable in the local environment, in the user-level `.Renviron` file. I also added a very minimal error message; this is standard for HTTP requests.
+
+```{r request, message=FALSE, warning=FALSE, paged.print=FALSE}
+list_url <- "https://api.nytimes.com/svc/books/v3/lists/current"
+ebook_path <- "/e-book-fiction.json"
+NYT_API_KEY <- Sys.getenv("NYT_API_KEY")
+
+error_msg <- function(resp) {
+  return("Unable to complete request.")
+}
+
+resp <- request(list_url) |>
+  req_url_path_append(ebook_path) |>
+  req_url_query(`api-key` = NYT_API_KEY) |>
+  req_error(body = error_msg) |>
+  req_perform()
+```
+
+### Converting the response to an R dataframe
+
+The above code block returns an HTTP response when successful. Next, I converted the response body into a string that could then be parsed into JSON, using the `jsonlite` package. At this point, the (very wide) raw dataframe `books` is available for extraction.
+
+```{r json}
+data_str <- resp_body_string(resp)
+
+ebooks <- fromJSON(data_str)
+ebooks <- ebooks$results$books
+
+knitr::kable(ebooks[, 1:9])
+```
+
+
+### Minor dataframe cleanup
+
+I decided to subset the most relevant columns and fill in any empty or "None" strings with NA values for ease in future analysis. This is the final tidy dataframe of the Top 15 Fiction E-Books of this week:
+
+```{r}
+ebooks <- ebooks |>
+  select(rank, weeks_on_list, primary_isbn13, title, author, publisher) |>
+  mutate(across(everything(), ~ ifelse(. %in% c("", "None"), NA, .)))
+
+knitr::kable(ebooks)
+```
+
