@@ -1,0 +1,126 @@
+---
+title: "Project 2: US Marriages"
+author: "Stephanie Chiang"
+output: html_document
+date: "2024-10-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
+## Project 2: US Marriages
+
+The following datasets were included to support [FiveThirtyEight's article]("https://fivethirtyeight.com/features/marriage-isnt-dead-yet/") on marriage rates in the US over several decades. I used the 2 separate files for men and women to analyze how marriage may have changed for the sexes differently, in relation to education levels.
+
+### Import and tidy the data
+
+```{r import}
+wm_raw <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/marriage/women.csv")
+
+m_raw <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/marriage/men.csv")
+```
+
+Per the README for the raw CSV files, the columns were all different types of samples of the population - like race, region, and employment - which were then further divided by age. For example, `SC_2534` represented the marriage rate for those in the 25 to 34 age range who had some college education.
+
+Most importantly, "figures represent share of the relevant population that has *never* been married", not the percent of married people.
+
+Using a quick `print(colnames(wm_raw) == colnames(m_raw))`, I was able to confirm that the variables for both datasets were the same. Then I selected all the columns with education prefixes.
+
+```{r subset-cols}
+col_prefix <- c("year", "all_", "HS_", "SC_", "BAp_", "BAo_", "GD_")
+
+women_sub <- wm_raw |>
+  select(starts_with(col_prefix))
+
+men_sub <- m_raw |>
+  select(starts_with(col_prefix))
+```
+
+Since there were no variables for education without age separation, the best option at this point (still not ideal) was simply to calculate the average for each type into new columns. These would have to be the best representations for all age levels in the given time period (really only 25 to 54, based on the original data). I also chose to combine the `BAp` and `BAo` columns, since these designations both referred to at least a Bachelor's degree. 
+
+Then, since the top part of the table went by decade before shifting to yearly rows, I removed any rows that did not represent the beginning of the decade.
+
+```{r filter}
+all <- rowMeans(select(women_sub, starts_with("all_")))
+HS <- rowMeans(select(women_sub, starts_with("HS_")))
+SC <- rowMeans(select(women_sub, starts_with("SC_")))
+BA <- rowMeans(select(women_sub, starts_with("BA")))
+GD <- rowMeans(select(women_sub, starts_with("GD_")))
+
+women <- data.frame(
+  year = women_sub$year,
+  all, HS, SC, BA, GD)
+
+women <- women |> filter(year %% 10 == 0)
+
+all <- rowMeans(select(men_sub, starts_with("all_")))
+HS <- rowMeans(select(men_sub, starts_with("HS_")))
+SC <- rowMeans(select(men_sub, starts_with("SC_")))
+BA <- rowMeans(select(men_sub, starts_with("BA")))
+GD <- rowMeans(select(men_sub, starts_with("GD_")))
+
+men <- data.frame(
+  year = men_sub$year,
+  all, HS, SC, BA, GD)
+
+men <- men |> filter(year %% 10 == 0)
+```
+
+For a tidiness and easier grouping and analysis, the tables were pivoted longer so that each observation represented a single year, education level, gender and the marriage rate (now inverted to the positive share of the population); then joined together on the year column.
+
+```{r pivot-join, message=FALSE, warning=FALSE}
+women <- women |>
+  pivot_longer(cols = !year, names_to = "education", values_to = "marriage_rate") |>
+  mutate(gender = "women")
+
+men <- men |>
+  pivot_longer(cols = !year, names_to = "education", values_to = "marriage_rate") |>
+  mutate(gender = "men")
+
+marriages <- women |> full_join(men)
+
+marriages <- marriages |>
+  arrange(year, education) |>
+  mutate(marriage_rate = 1 - marriage_rate)
+
+knitr::kable(marriages)
+```
+
+
+##### NOTE: Kids or no kids? Work or no work?
+
+I had originally intended to include some designations that were combinations with the selected populations, such as whether the sample population had children, or if they had steady employment the prior year. However, these only included observations for ages 25-34, which would be unhelpful for analysis against the other columns that covered the full age range.
+
+### Analysis
+
+The final, tidy version of the data above would allow for marriage rates to be grouped and filtered by year, education and/or gender for analysis.
+
+Since the marriage rates were all averages already, I thought a few visual representations of the changes in marriage rates could be useful.
+
+This visualization selected the marriage rates for rows in which the education column included "all" levels, then compared those by gender and arranged by year on the x-axis: 
+
+```{r year}
+all_rate <- filter(marriages, education == "all")
+
+ggplot(all_rate, aes(fill = gender, x = year, y = marriage_rate)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+
+This next visualization also plotted marriage rates against the year in order to examine the changes to the rate over time. In this case, using ggplot2's scatterplot grouped the observations by the gender column (represented by dot color) and the education column (represented by dot shape).
+
+Of note below: the rates of women with Bachelor's degrees and men with only high school education.
+
+```{r education, message=FALSE, warning=FALSE}
+ggplot(marriages, aes(year, marriage_rate)) +
+  geom_point(aes(color = education, shape = gender))
+```
+### Conclusion
+
+In this case, I decided to merge and tidy 2 sets of data into 1 for direct comparison; an alternative approach could have been to keep each dataset separate, and either group and summarize before analyzing each or create separate plots. 
+
+Changing the original sets into this tidy form, though, allowed for grouping and selecting by column values and analyzing the rates between men and women directly. Tidy data also fed easily into ggplot2 for visualization using code that was simple to produce and read. 
