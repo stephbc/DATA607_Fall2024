@@ -1,0 +1,113 @@
+---
+title: "Stephanie Chiang - Week 4 Assignment"
+output: html_document
+date: "2024-09-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Tidying and Transforming Data
+
+
+### Step 1:
+
+First, imported the necessary libraries:
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+```
+
+Then, I created and imported the CSV file with flight information in a wide format, with the labels and values in an "uncleaned" state:
+
+```{r import-csv}
+flights_wide <- read.csv(file="flights_wk4.csv")
+glimpse(flights_wide)
+```
+
+
+### Step 2:
+
+To begin tidying the data, I first pivoted the dataset longer to create a column for city names:
+
+```{r pivot-longer}
+flights_long <- flights_wide %>%
+  pivot_longer(cols = c("Los.Angeles", "Phoenix", "San.Diego", "San.Francisco", "Seattle"),
+               names_to = "city",
+               values_to = "count")
+
+knitr::kable(flights_long)
+```
+
+Next, the data actually needed to be pivoted wider again based on the values in the `flight.status` column:
+
+```{r pivot-wider}
+flights_tidy <- flights_long %>%
+  pivot_wider(names_from = flight.status,
+              values_from = count)
+
+knitr::kable(flights_tidy)
+```
+
+Finally, I cleaned up labels and values to make analysis a bit easier:
+
+```{r clean-up}
+colnames(flights_tidy)[which(names(flights_tidy) == "on time")] <- "on_time"
+
+flights_tidy$city <- gsub("\\.", " ", flights_tidy$city)
+
+knitr::kable(flights_tidy)
+```
+
+
+### Step 3:
+
+Comparing the arrival delays for the 2 airlines could be done in a number of ways.
+
+- Calculate
+
+Using the `sum()` function to calculate the total number of delays across all 5 cities shows that AM West had more total delays at 787, versus Alaska's 501.
+
+```{r totals}
+al_total <- sum(flights_tidy[which(flights_tidy$airline == "Alaska"), 4])
+al_total
+
+am_total <- sum(flights_tidy[which(flights_tidy$airline == "AM West"), 4])
+am_total
+```
+
+
+- Sort
+
+Using `dplyr`'s `mutate` and `arrange` to sort the data by percentage of delayed flights shows that AM West occupied 4 of the top 5 spots.
+
+```{r percent-column}
+flights_tidy <- flights_tidy %>%
+  mutate(delayed_pct = delayed / (on_time + delayed))
+
+flights_tidy <- flights_tidy %>%
+  arrange(desc(delayed_pct))
+
+knitr::kable(flights_tidy)
+```
+
+
+- Visualize
+
+Finally, I created a stacked bar plot to visualize the proportion of delays by airline for each city.
+
+```{r plot}
+ggplot(flights_tidy, aes(x = city, y = delayed, fill = airline)) + 
+    geom_bar(position="stack", stat="identity") +
+    labs(x = "City", y = "Number of Delays", fill = "Airline")
+```
+
+
+### Conclusion
+
+Based on both the total number of delays and each airline's percentage of delayed flights, AM West was more likely to have delayed arrivals than Alaska. There was only one city in which Alaska exceeded AM West's number of delays in absolute value (Seattle); and there, the percentage of delayed flights was still lower for Alaska at ~14%, with AM West at ~23%.
+
