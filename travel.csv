@@ -1,0 +1,26 @@
+name,country,traveled
+Steph,Japan,TRUE
+Steph,Italy,FALSE
+Steph,China,TRUE
+Steph,Sri Lanka,FALSE
+Steph,Belgium,TRUE
+Thach,Japan,TRUE
+Thach,Italy,TRUE
+Thach,China,FALSE
+Thach,Sri Lanka,FALSE
+Thach,Belgium,TRUE
+Kristina,Japan,TRUE
+Kristina,Italy,TRUE
+Kristina,China,FALSE
+Kristina,Sri Lanka,TRUE
+Kristina,Belgium,TRUE
+Kevin,Japan,TRUE
+Kevin,Italy,FALSE
+Kevin,China,FALSE
+Kevin,Sri Lanka,FALSE
+Kevin,Belgium,FALSE
+Jay,Japan,FALSE
+Jay,Italy,FALSE
+Jay,China,TRUE
+Jay,Sri Lanka,FALSE
+Jay,Belgium,TRUE

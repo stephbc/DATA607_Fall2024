@@ -1,0 +1,128 @@
+---
+title: "Week 5 Project 1"
+author: "Stephanie Chiang"
+output: html_document
+date: "2024-10-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(stringr)
+```
+
+## Week 5 Project 1 - Data Analysis
+
+
+### Importing the text file:
+
+At first, I tried importing directly from the link provided for the assignment. However, this resulted in an error due to an "incomplete final line" - basically, the text in the original link doesn't end in a `\n`. I had to recreate the file in my local directory to add one and import from there.
+
+Once the .txt file was ready, I used `read_lines()` to read the lines of the file into a character vector, then filtered out any lines that consisted solely of dashes. Next, using `read.table()` to indicate the correct column separator, I created a data frame that resembled (on the surface anyway) the structure of the table from the original file.
+
+```{r import-txt}
+chess_table <- read_lines("tournamentinfo.txt")
+chess_table <- chess_table[!grepl("^[-]+$", chess_table)]
+chess_data_raw <- read.table(text = chess_table, sep = "|")
+
+glimpse(chess_data_raw)
+```
+
+
+### Subsetting:
+
+Since each observation was split between 2 rows, I subset the odds and evens, and removed the headers.
+
+```{r split-subset}
+odd_rows <- chess_data_raw[seq_len(nrow(chess_data_raw)) %% 2 == 1,]
+odd_rows <- odd_rows[-1, -11]
+
+even_rows <- chess_data_raw[seq_len(nrow(chess_data_raw)) %% 2 == 0,]
+even_rows <- even_rows[-1, -11]
+```
+
+Then, I began building a new data frame with the first 4 required variables: Player’s Name, Player’s State, Total Number of Points, and Player’s Pre-Rating.
+
+The `prerating` column was the most complicated and required that first I extract the string between the "R:" and the arrow "->" in each row. Taking this raw string value, I then checked each for a "P" and removed the rest of the string if one appeared. Finally, the values could be converted to numeric for calculations for the final column.
+
+```{r new-df}
+player_id <- as.numeric(odd_rows[, 1])
+player_name <- odd_rows[, 2]
+player_state <- even_rows[, 1]
+total_points <- as.numeric(odd_rows[, 3])
+
+# extract pre-rating string
+prerating <- str_trim(str_extract(even_rows[, 2], "(?<=R:\\s)(.*?)(?=\\s*->)"))
+
+# strip the "P"s if they exist
+prerating <- ifelse(
+  str_detect(prerating, "P"),
+  str_remove_all(prerating, "P.*"),
+  prerating
+)
+
+# change type to numeric
+prerating <- as.numeric(prerating)
+
+# clean new data frame
+chess_data <- data.frame(player_id, player_name, player_state, total_points, prerating)
+
+knitr::kable(head(chess_data, n = 5))
+```
+
+For last column - the average pre-rating for each player's opponents - I wanted a second table (a sort of "draft" for calculations) for the opponent IDs for each round. The digits were extracted, then converted to numeric, and a column added for player ID. Then, I merged them with some of the `chess_data` columns into a single wide table.
+
+```{r draft-table}
+# strip anything not a digit
+full_tourn <- odd_rows[,4:10] %>%
+  mutate(across(everything(), ~gsub("\\D", "", .)))
+
+# change type to numeric and rename columns, add player ID
+full_tourn <- full_tourn %>%
+  mutate(across(everything(), ~as.numeric(.)))
+
+colnames(full_tourn) <- c("Round_1", "Round_2", "Round_3", "Round_4", "Round_5", "Round_6", "Round_7")
+
+full_tourn$player_id <- player_id
+
+# combine into 1 wide data frame
+full_tourn <- merge(chess_data[, c(1, 2, 5)], full_tourn, by = "player_id")
+
+knitr::kable(head(full_tourn, n = 5))
+```
+
+Finally, using the `player_id` in each `Round_*` variable, I replaced the value with the pre-rating for the matching player, and added a column for the opponents' average pre-rating. I appended that last column to the output table.
+
+```{r opp-avg}
+# helper function
+get_rating <- function(id) {
+  if (is.na(id)) {
+    return(NA)
+  } else {
+    player_match <- filter(full_tourn, player_id == id)
+    return(player_match$prerating)
+  }
+}
+
+# replace player IDs with player pre-ratings
+full_tourn[, 4:10] <- apply(full_tourn[, 4:10], c(1,2), get_rating)
+
+# add a row for the average
+full_tourn <- full_tourn %>%
+  mutate(opp_pre = round(rowMeans(full_tourn[, 4:10], na.rm = TRUE)))
+
+# include column on output table
+chess_data$opp_pre <- full_tourn$opp_pre
+```
+
+### Generate CSV
+
+```{r export-csv}
+colnames(chess_data) <- c("Player's ID", "Player’s Name", "Player’s State", "Total Number of Points", "Player’s Pre-Rating", "Average Pre Chess Rating of Opponents")
+
+write_csv(chess_data, "tournamentinfo.csv")
+
+knitr::kable(chess_data)
+```

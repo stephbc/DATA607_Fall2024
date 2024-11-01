@@ -1,0 +1,102 @@
+---
+title: "Week 7 Assignment"
+author: "Stephanie Chiang"
+output: html_document
+date: "2024-10-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+## Working with JSON, HTML, XML, and Parquet in R
+
+Using the pdftools library, I imported the text directly from the assignment PDF before using `read_csv` to read the comma-separated text into a data frame, dropping any unnecessary rows.
+
+```{r import, message=FALSE, warning=FALSE}
+library(pdftools)
+
+raw_text <- pdf_text("File_Formats_Assignments.pdf")
+
+table_text <- read_csv(file = raw_text, skip = 4, show_col_types = FALSE)
+
+table_text <- table_text[-c(24:27),]
+```
+
+The only columns with data in rows 6, 9 and 11 had been split from the last column of each previous row and needed to be appended before deletion. 
+
+Then I converted the dashes in the Brand column to `NA` values.
+
+```{r clean}
+table_text[5, 7] <- paste(table_text[5, 7],  table_text[6, 1], sep=" ")
+table_text[8, 7] <- paste(table_text[8, 7],  table_text[9, 1], sep=" ")
+table_text[10, 7] <- paste(table_text[10, 7],  table_text[11, 1], sep=" ")
+
+table_text <- table_text[-c(6, 9, 11), ]
+
+table_text$Brand[table_text$Brand == "-"] <- NA
+```
+
+
+Below, I used thew following libraries to convert the dataframe into their respective formats: `rjson`, `htmlTable`, `xml2` and `arrow`.
+
+*JSON*: As a front-end software engineer, I have had the most experience with this format. It's fairly easy to read and very popular, with plenty of available tools to parse, convert, etc. Most APIs return data in this format, and so it can be used across many languages and libraries. But since JSON basically comes in one long string, it's pretty inefficient and lacks structure.
+
+*HTML*: This is the basic structure of basically every web page. It's not meant for data transmission, but for information display. It's inevitable if web scraping though.
+
+*XML*: Like HTML, XML uses tags, which makes it inefficient and full of strings that may need to be parsed out. But since these tags can be customized, there can be more structure and definition to the data.
+
+*PARQUET*: Parquet is a columnar format, designed for efficiency and scalability with very large sets of data and can be used across platforms. However, once converted, the data is no longer readable by humans.
+
+***
+
+### JSON
+
+```{r json, paged.print=TRUE}
+library(rjson)
+
+json_table <- toJSON(table_text)
+print(json_table, type = "json")
+```
+
+### HTML
+
+```{r html, paged.print=TRUE}
+library(htmlTable)
+
+html_table <- htmlTable(table_text)
+print(head(html_table))
+```
+
+### XML
+
+```{r xml, paged.print=TRUE}
+library(xml2)
+
+xml_table <- xml_new_root("table_text")
+
+apply(table_text, 1, function(row) {
+  row_node <- xml_add_child(xml_table, "Row")
+  
+  lapply(names(row), function(col_name) {
+    xml_add_child(row_node, col_name, row[col_name])
+  })
+})
+
+print(head(xml_table))
+```
+
+### Parquet
+
+```{r parquet, paged.print=TRUE}
+library(arrow)
+
+tf <- tempfile(fileext = ".parquet")
+parquet_table <- write_parquet(table_text, tf)
+
+print(parquet_table)
+```
+
+

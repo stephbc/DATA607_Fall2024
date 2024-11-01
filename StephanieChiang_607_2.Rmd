@@ -1,0 +1,92 @@
+---
+title: "StephanieChiang_607_2"
+output: html_document
+date: "2024-09-11"
+params:
+  pwd:
+    label: "Please input password"
+    value: ""
+    input: password
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Week 2 - R and SQL
+
+### Parts 1 & 2: Build Table & Store data in SQL database
+
+Connecting to the class Azure database took a little longer than expected at first. My machine is over 10 years old and still running MacOS 11 Big Sur (no longer supported for updates) so I had to find archived versions of MySQL and MySQL workbench.
+
+Once connected and logged in, I manually input the table using the Workbench GUI, which was helpfully converted into SQL code too.
+
+### Part 3: Transfer data from SQL database to R dataframe
+
+To begin with, I was protecting the db password with R Studio's built-in password input function, but it broke when knitting the document and execution of the chunk halted with errors:
+
+> pw <- .rs.askForPassword("Database Password:")
+
+Confirmed [here](https://github.com/quarto-dev/quarto-cli/issues/2269) that this is a known R Studio issue that they have no intention of ever fixing. 
+
+Instead, I used a 'parameterized report' by updating the top of the r markdown file, and then selecting 'Knit with Parameters':
+
+```
+title: "StephanieChiang_607_2"
+output: html_document
+date: "2024-09-11"
+params:
+  pwd:
+    label: "Please input password"
+    value: ""
+    input: password
+```
+
+```{r sql-connection, warning=FALSE}
+library("RMySQL")
+
+sc_connection <- dbConnect(MySQL(),
+                        user="stephanie.chiang02",
+                        password=params$pwd,
+                        dbname="stephanie.chiang02",
+                        host="cunydata607sql.mysql.database.azure.com",
+                        port=3306)
+
+dbListTables(sc_connection)
+
+movies_2024 <- dbReadTable(sc_connection, "movies_2024")
+```
+
+### Part 4: Missing data strategy 
+
+First, I converted the column to numeric. From there, any strategy chosen to handle missing values would depend on the aim.
+
+``` {r missing-data-examples}
+movies_2024$score <- as.numeric(as.character(movies_2024$score))
+
+# For example, if I want an overall consensus of the quality of movies this year:
+# strip the values using na.rm=TRUE when calculating the median
+total_median <- median(movies_2024$score, na.rm=TRUE)
+print(total_median)
+
+# Or another example, counting the viewership/popularity of a movie:
+# use is.na() to remove from the count
+challengers_viewership <- nrow(
+  movies_2024[movies_2024$title == "Challengers" & !is.na(movies_2024$score),]
+)
+print(challengers_viewership)
+
+# In the future, for a recommender, a subset of NA values could be created
+# perhaps even for each reviewer
+mom_unwatched <- movies_2024[movies_2024$reviewer=="Mom" & is.na(movies_2024$score),]
+library(knitr)
+kable(mom_unwatched)
+```
+
+### Conclusion
+
+```{r disconnect}
+# Close the connection once finished, to conserve system resources
+# (helpful when your laptop is as old as mine)
+dbDisconnect(sc_connection)
+```

@@ -1,0 +1,140 @@
+---
+title: "StephanieChiang_607_3"
+output: html_document
+date: "2024-09-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Week 3 Assignment
+
+### 1. Normalization
+
+#### Example A:
+
+Here is a very large, publicly-available sample dataset taken from fivethirtyeight, expressing age information for Congress:
+
+``` {r sample-data}
+congress <- read.csv(
+  "https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/congress-demographics/data_aging_congress.csv",
+  header = TRUE)
+
+glimpse(congress)
+```
+
+The values in the `generation` column are defined in the README of the github:
+
+> Generation the member belonged to, based on the year of birth. Generations in the data are defined as follows: Gilded (1822-1842), Progressive (1843-1859), Missionary (1860-1882), Lost (1883-1900), Greatest (1901-1927), Silent (1928-1945), baby boomer (1946-1964), Generation X (1965-1980), millennial (1981-1996), Generation Z (1997-2012).
+
+To normalize this, the columns for age/generation could be split off into a separate data frame. Each member of congress could then be assigned to a generation based on the birth year values, instead of repeating the rows.
+
+``` {r gen-table}
+gen_name <- c("Gilded", "Progressive", "Missionary", "Lost", "Greatest", "Silent", "baby boomer", "Generation X", "millennial", "Generation Z")
+start_year <- c(1822, 1843, 1860, 1883, 1901, 1928, 1946, 1965, 1981, 1997)
+end_year <- c(1842, 1859, 1882, 1900, 1927, 1945, 1964, 1980, 1996, 2012)
+generations <- data.frame(gen_name, start_year, end_year)
+
+generations
+```
+
+
+#### Example B:
+
+Building an example dataset from scratch based on my music tastes, I may initially want to include columns like the following:
+
+`sc_music <- data.frame(song_title, album_title, artist, genre, plays)`
+
+But this could easily result in rows with many repeated groups. To avoid repetition from the same album, artist or genre, the data frames could be split into multiple tables with only 2 columns each, a unique ID and a value:
+
+```{r music-tables}
+artist_name <- c("Dom Dolla", "Taylor Swift", "BLACKPINK", "Young the Giant", "ODESZA")
+artists <- data.frame(artist_name)
+artists
+
+album_title <- c("ten days", "Lover", "THE ALBUM", "The Last Goodbye", "In Return")
+albums <- data.frame(album_title)
+albums
+
+genre_name <- c("pop", "house", "UK garage", "indie", "dance")
+genres <- data.frame(genre_name)
+genres
+```
+
+**** EDIT ****
+From there, a final data frame listing songs could include the following columns: song title, album foreign key(s), artist foreign primary key(s), genre foreign key(s), and at least one column dependent solely on the song title, like the number of times I've played the track. 
+
+
+#### Example C: 
+
+I created the following csv file detailing a simplified travel history of my friends:
+
+``` {r travel}
+travel <- read.csv(file="travel.csv", header = TRUE)
+travel
+```
+
+This data is normalized / tidy because even though names and countries appear in multiple rows, each pair of name-country could be used as a composite primary key. The `traveled` boolean column value is fully dependent on that key, the whole key and nothing but that key.
+
+**** EDIT ****
+Adding another column like `year` would break this normalization. In that case, separate tables for name and country could be split off and the TRUE/FALSE `traveled` column could also be removed entirely. The existence of a `year` value could then represent whether or not each person traveled there. The columns of the resulting join table could be: the name foreign key(s), the country foreign key(s), and the year(s).
+
+``` {r travel-foreignkeys}
+name <- c(1, 1, 2, 2, 2, 4)
+country <- c(1, 2, 3, 3, 4, 4)
+year <- c(2019, 2021, 2018, 2023, 2022, 2023)
+travel_2 <- data.frame(name, country, year)
+
+travel_2
+```
+
+
+### 2. Character Manipulation
+
+```{r majors}
+majors <- read.csv(
+  "https://raw.githubusercontent.com/fivethirtyeight/data/master/college-majors/majors-list.csv",
+  header = TRUE
+)
+
+data_stats_majors <- str_subset(majors$Major, pattern = "DATA|STATISTICS")
+print(data_stats_majors)
+```
+
+
+### 3. RegEx match
+
+`(.)\1\1`
+
+This parentheses is a group of only one character (any character, denoted by the period). The `\1` is referring to this group, and requiring it to be repeated. So this character must appear 3 times in a row to match. For example, `aaa`.
+
+
+`"(.)(.)\\2\\1"`
+
+The quotes just mean quotes, so this is a string version OF a regex. This is 2 groups, each of any one character. Because this is a string, the double slashes are escaped to one slash and denote order so next, the 2nd group has to precede the 1st. For example `"azza"`.
+
+
+`(..)\1`
+
+This is a group of any 2 characters, repeated. For example, `xyxy`.
+
+
+`"(.).\\1.\\1"`
+
+This is a string again, and means a group of any single character, followed by any character, then the group, any character and finally the group again. For example, `"bybxb"`.
+
+
+`"(.)(.)(.).*\\3\\2\\1"`
+
+This is also a string of a regex. Groups 1, 2 and 3, each of any single character, followed by any number of any characters, then groups 3, 2, and 1 in that order. For example, `"xyzHelloWorldzyx"`.
+
+
+### 4. RegEx construction
+
+Start and end with the same character: `^(.).*\1$`
+
+Contain a repeated pair of letters (e.g. "church" contains "ch" repeated twice.): `(..).*\1`
+
+Contain one letter repeated in at least three places (e.g. "eleven" contains three "e"s.): `(.).*\1.*\1`
