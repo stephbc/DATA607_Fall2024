@@ -1,0 +1,32 @@
+---
+title: 'Week 11: Recommender Systems & Scenario Design'
+author: 'Stephanie Chiang'
+output: html_document
+date: "2024-11-13"
+---
+
+## Scenario Design Analysis for Youtube
+
+This 2021 [blog post](https://blog.youtube/inside-youtube/on-youtubes-recommendation-system/) by YouTube's engineering VP provides insight into the development of their recommendation system.
+
+### 1. Who are the target users?
+
+Everyone. There are literally billions of users on YouTube. As the most successful video sharing platform on the internet, their reach is staggering. A recommendation system is necessary to its continued functioning.
+
+### 2. What are the users' key goals?
+
+This audience is incredibly large and generalized, but each user has unique viewing tastes and the assumed common goal of connecting to audio-visual content that "inspires, teaches, and entertains." 
+
+### 3. How to help those users accomplish those goals?
+
+YouTube must custom curate the feed to each user. Per the blog post, they appear to use the process of collaborative filtering. "Our system...compares your viewing habits with those that are similar to you and uses that information to suggest other content you may want to watch."
+
+
+## Reverse engineering
+
+Data is gathered on multiple features on what they refer to as "signals": video clicks, watch time or how long a video was viewed, survey responses, and the explicit user interactions of sharing, likes, and dislikes. They further developed the recommendations to limit content that was "low-quality" or "borderline" - determinations made by human evaluators.
+
+
+## Improvements
+
+The most publicized and alarming issue with many recommender systems, but recently spotlighted on YouTube specifically, is the flip-side of accurate and effective recommendation algorithms: the creation of echo-chambers. Users are only given options of content with the same biases repeatedly, and without critical or opposing viewpoints. Since recommendations are now constructed into the user experience of the platform and provided without consent, users actually have very limited choices of what to watch and almost no way to "escape" these recommendations.
