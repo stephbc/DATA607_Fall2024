@@ -1,0 +1,82 @@
+---
+title: "Week 11 Extra Credit Assignment"
+output: html_document
+date: "2024-11-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Global Baseline Estimate 
+
+The Global Baseline Estimate (GBE) is a non-personalized prediction algorithm that uses a global average across all users and items as a baseline estimate. Bias is then mitigated by calculating the differences between those averages and specific users and items.
+
+Recommendations are then determined as follows: the estimate or prediction of a rating by user *u* of item *i*
+= the global average rating + the user bias + the item bias.
+
+
+### Movie Ratings
+
+Below, the GBE is applied to sample movie ratings to make movie recommendations. First, the excel survey data is imported.
+
+```{r import, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+
+ratings <- read_excel("MovieRatings.xlsx")
+```
+
+Next, the average ratings for each `Critic` row (`user_biases`) and movie column (`item_biases`) are calculated.
+
+```{r user-means}
+user_biases <- data.frame(
+  Critic = ratings$Critic,
+  user_avg = round(rowMeans(ratings[2:7], na.rm = TRUE), digits = 2)
+)
+
+user_global_avg <- round(mean(user_biases$user_avg), digits = 2)
+```
+
+The global average for users is 4.03, which is used to calculate the user bias.
+
+```{r user-bias}
+user_biases <- user_biases |>
+  mutate(user_bias = user_avg - user_global_avg)
+
+user_biases
+```
+
+The process is similar for calculating the item bias, except the ratings table is pivoted longer to tidy the data first and the calculated global average for items is 3.87.
+
+```{r item-bias}
+ratings_tidy <- ratings |>
+  pivot_longer(!Critic, names_to = "movies", values_to = "rating")
+
+item_biases <- ratings_tidy |>
+  group_by(movies) |>
+  summarize(item_avg = round(mean(rating, na.rm = TRUE), digits = 2))
+
+item_global_avg <- round(mean(item_biases$item_avg), digits = 2)
+
+item_biases <- item_biases |>
+  mutate(item_bias = item_avg - item_global_avg)
+
+item_biases
+```
+
+These biases are joined onto the tidy dataset for easier calculations.
+
+```{r joins}
+gbe_ratings <- ratings_tidy |>
+  filter(is.na(rating)) |>
+  left_join(user_biases, by = "Critic") |>
+  left_join(item_biases, by = "movies") |>
+  mutate(predicted_rating = user_global_avg + user_bias + item_bias)
+
+gbe_ratings
+```
+
+### Conclusion
+
+The `predicted_rating` column of the new `gbe_ratings` dataframe should give reasonable predictions for each user-item pair. For example, each `Critic` could be given a list of movies they have not rated, filtered by any prediction over 4.
