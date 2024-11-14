@@ -1,5 +1,6 @@
 ---
 title: "Week 11 Extra Credit Assignment"
+author: 'Stephanie Chiang'
 output: html_document
 date: "2024-11-13"
 ---
