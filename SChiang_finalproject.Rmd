@@ -120,9 +120,11 @@ raw_nyt <- responses |> resps_data(\(resp) resp_body_json(resp)$results)
 
 raw_nyt <- as.data.frame(do.call(cbind, raw_nyt))
 raw_nyt <- as.data.frame(t(raw_nyt))
+
+knitr::kable(head(raw_nyt))
 ```
 
-The data is cleaned up by selecting relevant columns and un-nesting, widening and hoisting the list-columns.
+The relevant columns are selected.
 
 ```{r nyt-clean}
 nyt <- raw_nyt |>
@@ -131,7 +133,14 @@ nyt <- raw_nyt |>
     "author",
     "isbns",
     "ranks_history")
+```
 
+
+## Tidying & Transformations
+
+Since two of the columns in `nyt` are still nested, the following functions are applied to un-nest, widen and hoist the appropriate values from the list-columns.
+
+```{r nyt-transform}
 nyt <- nyt |>
   unnest(cols = isbns) |>
   unnest_wider(isbns)
@@ -150,14 +159,16 @@ nyt <- nyt |>
   rename(isbn = isbn13)
 ```
 
-At this point, the data can be saved to disk as a CSV as a backup (since the API calls took several minutes to complete and this can avoid having to repeat these costly steps).
+At this point, the NY Times Bestseller information can be saved to disk as a CSV to backup the data (since the API calls took several minutes to complete and this can avoid having to repeat these costly steps).
 
 ```{r save-csv}
 saveable <- apply(nyt, 2, as.character)
 write.csv(saveable, file = "nyt.csv")
 ```
 
-Now, the subset for only the bestseller information can be joined to the `gr` table.
+Now, a subset for the bestseller information can be joined to the `gr` table. In this table, ISBNs are allowed to be duplicated, as each observation is actually an appearance on a bestseller list for a week. Many books appear for many weeks and achieve various ranks.
+
+For the fullest, tidiest portrait of book success, a mutating right join can be used to keep all rows of the NY Times data:
 
 ```{r join, message=FALSE, warning=FALSE}
 nyt_join <- nyt |>
@@ -172,21 +183,24 @@ knitr::kable(head(books))
 ```
 
 
-## Tidying & Transformations
-
-```{r join-df}
-
-
-```
-
-
-
 ## Grouping
 
+For a cleaner, simplified dataset, the highest rank achieved and number of weeks can be calculated and applied to the data via grouping.
+
 ```{r group}
+nyt_group_join <- nyt_join |>
+  group_by(isbn) |>
+  filter(rank == min(rank) | weeks_on_list == max(weeks_on_list))
 
+nyt_group_join <- nyt_group_join |>
+  group_by(isbn) |>
+  summarize(
+    best_rank = min(rank),
+    most_weeks = max(weeks_on_list))
 
+books_best <- left_join(gr, nyt_group_join)
 
+knitr::kable(head(books_best))
 ```
 
 
