@@ -1,0 +1,211 @@
+---
+title: "THE POPULARITY OF BOOKS ON GOODREADS"
+subtitle: "DATA 607 Final Project"
+date: "Fall 2024"
+author: "Stephanie Chiang"
+urlcolor: blue
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(httr2)
+library(jsonlite)
+
+NYT_API_KEY <- Sys.getenv("NYT_API_KEY")
+```
+
+## Abstract
+
+This analysis will explore the effects that specific attributes of books, such as genre, past author success or being part of a multi-volume series correlate significantly with higher ratings, greater numbers of reviews or longer runs on the bestseller lists. After cleaning/transforming the datasets and joining on ISBN, the dataframe can then be tidied for EDA and visualization. The end-goal is data that can provide insight into book popularity for recommendation and prediction.
+
+
+## Data Sources
+
+The first dataset, in CSV format posted on  [Kaggle](https://www.kaggle.com/datasets/cristaliss/ultimate-book-collection-top-100-books-up-to-2023/), was originally scraped from Goodreads' lists of the Top 100 books for each year from 1980 to 2023. This 
+CSV includes genres, Goodreads readership numbers and user-provided ratings.
+
+The second source of data is the [NYTimes Books API](https://developer.nytimes.com/docs/books-product/1/overview). The key information here is the number of weeks that books may have appeared on bestseller lists and their rankings, in addition to the ISBNs and author names, which can be used to join the data to the Goodreads information. 
+
+
+## Acquisition & Cleaning
+
+The Goodreads CSV is imported and subset for variables of interest. 
+
+```{r goodreads-import, message=FALSE, warning=FALSE}
+raw_gr <- read.csv(file = "goodreads_top100.csv")
+
+# select relevant columns
+gr <- raw_gr |>
+  select(
+    "isbn",
+     "title",
+     "authors",
+     "language",
+     "format", 
+     "genres",
+     "publication_date",
+     "rating_score",
+     "num_ratings")
+```
+
+Since the ISBN column will be used as the foreign key for each book, any observations with blank values or duplicate ISBNs must be removed. Also, the focus in this study will be on books published in the 10 year span from 2014-2023. Furthermore, since the NY Times API will only return bestselling books in the US and defaults to hardcover fiction, the following filtering can be applied to the Goodreads data to preliminarily screen for relevant results:
+
+- drop books with any `language` other than "English"
+- drop books with any `format` other than "Hardcover"
+- drop books with "Nonfiction" in the `genres` list
+- format the `publication_date` into a Date object of only the year, 
+    then drop any book published before 2014
+
+```{r goodreads-filter}
+gr <- gr |>
+  mutate(isbn = na_if(isbn, "")) |>
+  drop_na(isbn) |>
+  distinct(isbn, .keep_all = TRUE) |>
+  filter(language == "English", format == "Hardcover") |>
+  select(!c(language, format)) |>
+  filter(!grepl("Nonfiction", genres))
+
+gr$publication_date <- year(mdy(gr$publication_date))
+gr <- gr |> filter(publication_date > "2013")
+
+knitr::kable(head(gr))
+```
+
+The New York Times API paginates results to 20 titles per request, with the total number of available historical results at 36528. This would mean 1826 calls total for the full list. Since the API is also rate limited to 10 requests per minute, the number of calls must reduced as much as possible. The API requests can then be made sequentially and throttled to 10 per minute or fewer.
+
+So before the requests are formulated, the `gr` dataframe can be grouped by author name to count their books and rank them by number of appearances on Goodreads' Top 100 for the selected years, and filtered for only authors with 3 or more books on the list.
+
+```{r gr-authors}
+top_authors <- gr |>
+  group_by(authors) |>
+  reframe(
+    books_count = n(),
+    mean_score = mean(rating_score),
+    median_score = median(rating_score),
+    min_score = min(rating_score),
+    max_score = max(rating_score),
+    mean_num_ratings = mean(num_ratings)
+  ) |>
+  filter(books_count > 2) |>
+  arrange(desc(mean_score))
+
+length(top_authors$authors)
+```
+
+This results in 33 authors for whom requests will be made to the API for their NY Times Bestseller Lists' historical appearances.
+
+```{r nyt-reqt, message=FALSE, warning=FALSE}
+base_url <- "https://api.nytimes.com/svc/books/v3/lists/best-sellers/history.json"
+
+build_requests <- function(names) {
+  lapply(names, \(name) {
+    request(base_url) |>
+      req_url_query(
+        "api-key" = NYT_API_KEY,
+        "author" = name) |>
+      req_retry(backoff = ~10) |>
+      req_throttle(rate = 6 / 60, realm = "https://api.nytimes.com/svc/books")})}
+
+requests <- build_requests(top_authors$authors)
+responses <- req_perform_sequential(requests, on_error = "continue")
+```
+
+The list of successful responses is formatted from a series of JSON objects into a list, then a dataframe and transposed.
+
+```{r nyt-format}
+responses <- responses |> resps_successes() 
+raw_nyt <- responses |> resps_data(\(resp) resp_body_json(resp)$results)
+
+raw_nyt <- as.data.frame(do.call(cbind, raw_nyt))
+raw_nyt <- as.data.frame(t(raw_nyt))
+```
+
+The data is cleaned up by selecting relevant columns and un-nesting, widening and hoisting the list-columns.
+
+```{r nyt-clean}
+nyt <- raw_nyt |>
+  select(
+    "title",
+    "author",
+    "isbns",
+    "ranks_history")
+
+nyt <- nyt |>
+  unnest(cols = isbns) |>
+  unnest_wider(isbns)
+
+nyt <- nyt |>
+  unnest(cols = ranks_history)
+
+nyt <- nyt |>
+  hoist(ranks_history,
+    rank = "rank",
+    weeks_on_list = "weeks_on_list",
+  )
+
+nyt <- nyt |>
+  subset(select = -c(isbn10, ranks_history)) |>
+  rename(isbn = isbn13)
+```
+
+At this point, the data can be saved to disk as a CSV as a backup (since the API calls took several minutes to complete and this can avoid having to repeat these costly steps).
+
+```{r save-csv}
+saveable <- apply(nyt, 2, as.character)
+write.csv(saveable, file = "nyt.csv")
+```
+
+Now, the subset for only the bestseller information can be joined to the `gr` table.
+
+```{r join, message=FALSE, warning=FALSE}
+nyt_join <- nyt |>
+  select(
+    "isbn",
+    "rank",
+    "weeks_on_list")
+
+books <- right_join(gr, nyt_join)
+
+knitr::kable(head(books))
+```
+
+
+## Tidying & Transformations
+
+```{r join-df}
+
+
+```
+
+
+
+## Grouping
+
+```{r group}
+
+
+
+```
+
+
+## Analysis
+
+at least one statistical analysis
+at least one graphics that describes or validates your data
+
+at least one feature that we did not cover in class! There are many examples: “I used ggmap; I created
+a decision tree; I ranked the results; I created my presentation slides directly from R; I figured out to use OAuth 2.0...”
+
+## Conclusion 
+
+- deliver the submitted code and data on Rmd, self-contained on rpubs and GitHub
+- fully reproducible; no code references on local machine
+- code run without errors?
+
+Was the presentation delivered in the allotted time?
+Presentation: one challenge you encountered in code and/or data, and what you did when you
+encountered that challenge - API throttling
+- the audience has clear understanding of your motivation
+- and at least one insight you gained / conclusion you reached / hypothesis rejected or failed to reject
