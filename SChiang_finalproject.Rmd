@@ -1,0 +1,318 @@
+---
+title: "THE SUCCESS & POPULARITY OF BOOKS & AUTHORS"
+subtitle: "DATA 607 Final Project"
+date: "Fall 2024"
+author: "Stephanie Chiang"
+urlcolor: blue
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(httr2)
+library(jsonlite)
+
+NYT_API_KEY <- Sys.getenv("NYT_API_KEY")
+```
+
+
+## Data Sources
+
+The first dataset, in CSV format posted on  [Kaggle](https://www.kaggle.com/datasets/cristaliss/ultimate-book-collection-top-100-books-up-to-2023/), was originally scraped from Goodreads' lists of the Top 100 books for each year from 1980 to 2023. This 
+CSV includes genres, Goodreads readership numbers and user-provided ratings.
+
+The second source of data is the [NYTimes Books API](https://developer.nytimes.com/docs/books-product/1/overview). The key information here is the number of weeks that successful books appeared on bestseller lists and their rankings, in addition to the ISBNs and author names, which will be used to join the data to the Goodreads information. 
+
+
+## Abstract
+
+This analysis will explore whether certain attributes of books or authors correlate significantly with higher ratings or greater numbers of reviews on Goodreads, or higher rankings and longer runs on the New York Times weekly bestseller lists. After cleaning, transforming and tidying the datasets and joining on author, title and/or ISBN, the data will be used for EDA and visualization. The end-goal is to create dataframes that can provide insight into book and author popularity for recommendation and prediction.
+
+
+## Acquisition & Cleaning
+
+The Goodreads CSV is imported and subset for variables of interest. 
+
+```{r goodreads-import, message=FALSE, warning=FALSE}
+raw_gr <- read.csv("https://raw.githubusercontent.com/stephbc/DATA607_Fall2024/refs/heads/final_proj/goodreads_top100.csv")
+
+# select relevant columns
+gr <- raw_gr |>
+  select(
+    "isbn",
+     "title",
+     "authors",
+     "language",
+     "format", 
+     "genres",
+     "publication_date",
+     "rating_score",
+     "num_ratings")
+```
+
+Since the ISBN column will be used as the foreign key for each book, any observations with blank values or duplicate ISBNs must be removed. Also, the focus in this study will be on books published in the 10 year span from 2014-2023. Furthermore, since the NY Times API will only return bestselling books in the US and defaults to hardcover fiction, the following filtering can be applied to the Goodreads data to preliminarily screen for relevant results:
+
+- drop books with any `language` other than "English"
+- drop books with any `format` other than "Hardcover"
+- drop books with "Nonfiction" in the `genres` list
+- format the `publication_date` into a Date object of only the year, then drop any book published before 2014
+
+```{r goodreads-filter}
+gr <- gr |>
+  mutate(isbn = na_if(isbn, "")) |>
+  drop_na(isbn) |>
+  distinct(isbn, .keep_all = TRUE) |>
+  filter(language == "English", format == "Hardcover") |>
+  select(!c(language, format)) |>
+  filter(!grepl("Nonfiction", genres))
+
+gr$publication_date <- year(mdy(gr$publication_date))
+gr <- gr |> filter(publication_date > "2013")
+
+knitr::kable(head(gr))
+```
+
+The New York Times API paginates results to 20 titles per request, with the total number of available historical results at 36528. This would mean 1826 calls total for the full list. Since the API is also rate limited to 10 requests per minute, the number of calls must reduced as much as possible. The API requests can then be made sequentially and throttled to 10 per minute or fewer.
+
+So before the requests are formulated, the `gr` dataframe will be grouped by author name to count their books and rank them by number of appearances on Goodreads' Top 100 for the selected years, and filtered for authors with 3 or more books on the list.
+
+```{r gr-authors}
+top_authors <- gr |>
+  group_by(authors) |>
+  reframe(
+    gr_titles = n(),
+    best_rating = max(rating_score),
+    mean_rating = round(mean(rating_score), digits = 2),
+    total_ratings = sum(num_ratings, na.rm = TRUE),
+  ) |>
+  filter(gr_titles > 2) |>
+  arrange(desc(mean_rating))
+
+length(top_authors$authors)
+```
+
+This results in 33 authors for whom requests will be made to the API for their NY Times Bestseller Lists' historical appearances.
+
+```{r nyt-reqt, message=FALSE, warning=FALSE}
+base_url <- "https://api.nytimes.com/svc/books/v3/lists/best-sellers/history.json"
+
+build_requests <- function(names) {
+  lapply(names, \(name) {
+    request(base_url) |>
+      req_url_query(
+        "api-key" = NYT_API_KEY,
+        "author" = name) |>
+      req_retry(backoff = ~10) |>
+      req_throttle(rate = 6 / 60, realm = "https://api.nytimes.com/svc/books")})}
+
+requests <- build_requests(top_authors$authors)
+responses <- req_perform_sequential(requests, on_error = "continue")
+```
+
+The list of successful responses is formatted from a series of JSON objects into a list, into a dataframe and then transposed.
+
+```{r nyt-format}
+responses <- responses |> resps_successes() 
+raw_nyt <- responses |> resps_data(\(resp) resp_body_json(resp)$results)
+
+raw_nyt <- as.data.frame(do.call(cbind, raw_nyt))
+raw_nyt <- as.data.frame(t(raw_nyt))
+```
+
+```{r nyt-clean}
+# select relevant columns
+nyt <- raw_nyt |>
+  select(
+    "title",
+    "author",
+    "isbns",
+    "ranks_history")
+
+knitr::kable(head(nyt))
+```
+
+
+## Tidying & Transformations
+
+Since two of the columns in `nyt` are still nested, the following functions are applied to un-nest, widen and hoist the appropriate values from the list-columns.
+
+```{r nyt-transform}
+nyt <- nyt |>
+  unnest(cols = isbns) |>
+  unnest_wider(isbns)
+
+nyt <- nyt |>
+  unnest(cols = ranks_history)
+
+nyt <- nyt |>
+  hoist(ranks_history,
+    rank = "rank",
+    weeks_on_list = "weeks_on_list",
+  )
+
+nyt <- nyt |>
+  subset(select = -c(isbn10, ranks_history)) |>
+  rename(isbn = isbn13)
+
+knitr::kable(head(nyt))
+```
+
+At this point, the NY Times Bestseller information can (optionally) be saved to disk as a CSV to backup the data (since the API calls took several minutes to complete and this can avoid having to repeat these costly steps).
+
+```{r save-csv}
+saveable <- apply(nyt, 2, as.character)
+write.csv(saveable, file = "nyt.csv")
+```
+
+Now, a subset for the bestseller information can be joined to the `gr` table. In this table, ISBNs are allowed to be duplicated, as each observation is actually an appearance on a bestseller list for a week. Many books appear for many weeks and achieve various ranks. For the fullest, tidiest portrait of book success, a mutating right join can be used to keep all rows of the NY Times data:
+
+```{r join, message=FALSE, warning=FALSE}
+nyt_small <- nyt |>
+  select(
+    "isbn",
+    "rank",
+    "weeks_on_list")
+
+books <- right_join(gr, nyt_small)
+
+knitr::kable(head(books))
+```
+
+For a complete dataset with an observation for each ISBN including the highest rank achieved and number of weeks, `gr` and `nyt` are combined.
+
+```{r group-books}
+# select the best rank for each ISBN
+nyt_isbn_grp1 <- nyt |>
+  select(!weeks_on_list) |>
+  group_by(isbn) |>
+  slice(which.min(rank))
+
+# select the most weeks for each ISBN
+nyt_isbn_grp2 <- nyt |>
+  select(!rank) |>
+  group_by(isbn) |>
+  slice(which.max(weeks_on_list))
+
+# join into 1 table
+nyt_group_join <- full_join(nyt_isbn_grp1, nyt_isbn_grp2, by = join_by(title, author, isbn))
+
+# reformat columns to match
+nyt_group_join <- nyt_group_join |>
+  unnest(cols = title) |>
+  unnest(cols = author) |>
+  rename(authors = author)
+
+# join onto the `gr` dataframe
+books_best <- full_join(gr, nyt_group_join, by = join_by(title, authors, isbn))
+
+# cleanup author strings
+books_best$authors <- gsub("\\.$", "", books_best$authors)
+
+knitr::kable(head(books_best))
+```
+
+
+## Grouping
+
+For the author success analysis, the data is grouped on author name and joined onto the `top_authors` data.
+
+```{r group-authors, message=FALSE, warning=FALSE}
+author_hist <- books_best |>
+  group_by(authors) |>
+  summarize(
+    num_titles = n_distinct(title, na.rm = TRUE),
+    best_rank = min(rank, na.rm = TRUE),
+    mean_rank = round(mean(rank, na.rm = TRUE)),
+    most_weeks = max(weeks_on_list, na.rm = TRUE),
+    mean_weeks = round(mean(weeks_on_list, na.rm = TRUE)))
+
+top_auth_hist <- left_join(top_authors, author_hist, by = join_by(authors))
+
+top_auth_hist <- top_auth_hist |>
+  select(!c(gr_titles, )) |>
+  mutate(across(c(best_rank, mean_rank, most_weeks, mean_weeks), ~na_if(., Inf))) |>
+  mutate(across(c(best_rank, mean_rank, most_weeks, mean_weeks), ~na_if(., -Inf))) |>
+  mutate(across(c(best_rank, mean_rank, most_weeks, mean_weeks), ~na_if(., NaN)))
+
+knitr::kable(head(top_auth_hist))
+```
+
+If data for unique title is required, ISBNs must be dropped, and the columns aggregated.
+
+```{r collapse-titles, message=FALSE, warning=FALSE}
+books_best$title <- str_trim(tolower(books_best$title))
+
+unique_titles <- books_best |>
+  select(!c(isbn, genres, publication_date)) |>
+  group_by(title) |>
+  summarize(
+    u_rating = round(mean(rating_score, na.rm = TRUE), digits = 2),
+    u_num_ratings = round(mean(num_ratings, na.rm = TRUE)),
+    u_rank = min(rank),
+    u_weeks = max(weeks_on_list)) |>
+  mutate(across(c(u_rating, u_num_ratings), ~na_if(., NaN)))
+
+knitr::kable(head(unique_titles))
+```
+
+
+## Analysis
+
+Using the `top_auth_hist` dataframe, the relationships between author popularity and ratings on Goodreads Top 100 lists or rankings on the bestseller lists can be visualized.
+
+The first graphic below plots `num_titles`, which is the total number of unique titles that appear on either list (and therefore an analog for author popularity or fame), against the author's highest rated book on Goodreads.
+
+There appears to be a roughly linear, positive relationship - so, a popular author may expect higher ratings by fans on Goodreads.
+
+```{r gr-plot, message=FALSE, warning=FALSE}
+ggplot(data = top_auth_hist, aes(x = num_titles, y = best_rating)) +
+  geom_point() +
+  scale_x_binned() +
+  geom_smooth(method = "lm") +
+  labs(x = "Number of successful titles",
+       y = "Top Mean User Rating", 
+       title = "Highest Rating on Goodreads for Top Authors")
+```
+
+This second plot shows the relationship between author popularity and their average rank when on the Bestseller list.
+
+In contrast, there appears to be a negative linear relationship, which could possibly indicate that the more famous an author is, the less likely their books are to achieve high ranks on the bestseller list.
+
+```{r nyt-plot, message=FALSE, warning=FALSE}
+ggplot(data = top_auth_hist, aes(x = num_titles, y = mean_rank)) +
+  geom_point() +
+  scale_y_reverse() +
+  scale_x_binned() +
+  geom_smooth(method = "lm") +
+  labs(x = "Number of successful titles",
+       y = "Rank",
+       title = "Average Rank When Appearing on the NY Times Bestsellers List")
+```
+
+```{r stat}
+m_author <- lm(mean_rating ~ total_ratings + mean_weeks, data = top_auth_hist)
+summary(m_author)
+```
+
+The multiple linear model above calculates if the y-value `mean_rating` on Goodreads can be predicted by the `total_ratings` (another measure of popularity for an author) in combination with `mean_weeks`, the average number of weeks that the author's books will appear on the NY Times lists.
+
+With the small multiple R-squared and elevated P-values for both predictors, the effect of author popularity on mean rating on Goodreads is not statistically significant.
+
+The residuals are checked below to confirm if the conditions for regression are reasonable. On the residual plot, the fitted values are generally clustered without a pattern around the 0 line, even though there are outliers on the right. On the normal probability plot, the residuals appear nearly normal as well.
+
+```{r resid}
+ggplot(data = m_author, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals")
+
+ggplot(data = m_author, aes(sample = .resid)) +
+  stat_qq()
+```
+
+
+## Conclusion
+
+In conclusion, the analysis of the combined datasets revealed that there is little to no significant relationship between author popularity and higher ratings. Despite validating the linear model, the lack of a strong correlation suggests that other factors, such as content quality, genre preferences, or marketing efforts, may play a more prominent role in influencing ratings. This insight highlights the complexity of rating dynamics and underscores the need for further investigation into additional variables that may better explain these patterns.
